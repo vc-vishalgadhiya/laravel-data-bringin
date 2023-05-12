@@ -2,83 +2,76 @@
 
 namespace Vcian\LaravelDataBringin\Http\Controllers;
 
-use Illuminate\Database\QueryException;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 use Vcian\LaravelDataBringin\Http\Requests\ImportRequest;
 use Vcian\LaravelDataBringin\Http\Requests\StoreImportRequest;
+use Vcian\LaravelDataBringin\Models\ImportLog;
 use Vcian\LaravelDataBringin\Services\ImportService;
 
 class ImportController extends Controller
 {
+    /**
+     * @param ImportService $importService
+     */
     public function __construct(
-        private readonly ImportService $importService
-    ) {
-    }
+        private ImportService $importService
+    ) {}
 
+    /**
+     * @param ImportRequest $request
+     * @return View|RedirectResponse
+     */
     public function index(ImportRequest $request): View|RedirectResponse
     {
         if ($request->step > session('import.step') && $request->step != 4) {
             return to_route('data_bringin.index');
         }
         $data = [];
-        $table = $request->table ?? session('import.table');
+        $log = ImportLog::find(session('import.id'));
+        $table = $request->table ?? ($log->extra_data['table'] ?? null);
         $data['tables'] = $this->importService->getTables();
         $data['tableColumns'] = $table ? $this->importService->getTableColumns($table) : collect();
         $data['selectedTable'] = $table;
-        $data['selectedColumns'] = collect(session('import.columns'));
-        $data['fileColumns'] = collect(session('import.fileColumns'));
-        $data['fileData'] = collect(session('import.data'));
-        $data['result'] = collect(session('import.result'));
+        $data['selectedColumns'] = $log->extra_data['columns'] ?? collect();
+        $data['fileColumns'] = $log ? $this->importService->getCsvColumns(storage_path("app/import/import.csv")) : collect();
+        $data['fileData'] = $log ? $this->importService->csvToArray(storage_path("app/import/import.csv")) : collect();
 
         return view('data-bringin::import', $data);
     }
 
+    /**
+     * @param StoreImportRequest $request
+     * @return RedirectResponse
+     * @throws \Throwable
+     */
     public function store(StoreImportRequest $request): RedirectResponse
     {
         switch ($request->step) {
             case 1:
                 session()->forget('import');
-                $path = $request->file('file')->getRealPath();
-                session(['import.data' => $this->importService->csvToArray($path), 'import.step' => 2]);
+                $file = $request->file('file');
+                $path = Storage::disk('local')->putFileAs('import', $file, 'import.csv');
+                $log = ImportLog::create([
+                    'total_count' => count($this->importService->csvToArray(storage_path("app/$path"))),
+                    'file_name'  => $file->getClientOriginalName(),
+                ]);
+                session(['import.step' => 2, 'import.id' => $log->id]);
                 break;
             case 2:
                 $columns = collect($request->columns)->filter();
                 if(!$columns->count()) {
                     return redirect()->back();
                 }
-                session([
-                    'import.table' => $request->table,
-                    'import.columns' => $columns,
-                    'import.step' => 3,
-                ]);
+                $log = ImportLog::findOrFail(session('import.id'));
+                $log->extra_data = ['table' => $request->table, 'columns' => $columns];
+                $log->save();
+                session(['import.step' => 3]);
                 break;
             case 3:
-                $fileData = collect(session('import.data'));
-                $table = session('import.table');
-                $columns = session('import.columns');
-                $insertData = [];
-                try {
-                    foreach ($fileData as $data) {
-                        $prepareData = [];
-                        foreach ($columns as $key => $column) {
-                            $prepareData[$key] = $data[$column];
-                        }
-                        $insertData[] = $prepareData;
-                    }
-                    DB::table($table)->insert($insertData);
-                } catch (QueryException $ex) {
-                    $errorMsg = 'There is an issue on store data in database.';
-                } catch (\Exception $ex) {
-                    $errorMsg = $ex->getMessage();
-                }
-                $result = [
-                    'count' => count($insertData),
-                    'error' => $errorMsg ?? null,
-                ];
+                $this->importService->saveData();
                 session()->forget('import');
-                session(['import.result' => $result]);
                 break;
         }
         return to_route('data_bringin.index', ['step' => ++$request->step]);

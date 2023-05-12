@@ -1013,7 +1013,7 @@
                                                                                 Column
                                                                             </option>
                                                                             @foreach($fileColumns as $val)
-                                                                                <option @selected(isset($selectedColumns[$column['name']]) && $selectedColumns[$column['name']] == $val && $selectedTable == session('import.table'))>{{ $val }}</option>
+                                                                                <option @selected(isset($selectedColumns[$column['name']]) && $selectedColumns[$column['name']] == $val)>{{ $val }}</option>
                                                                             @endforeach
                                                                         </select>
                                                                     </div>
@@ -1082,13 +1082,13 @@
                                                                 @foreach($fileData as $key => $data)
                                                                     <tr role="row" class="odd" id="record1">
                                                                         <td class="text-center">
-                                                                            <a href="{{ route('data_bringin.delete_record', $data['Id']) }}"
+                                                                            <a href="{{ route('data_bringin.delete_record', ++$key) }}"
                                                                                onclick="return confirm('Are you sure you want to delete this record?')"
                                                                                class="bg-transparent border-0 p-0">
                                                                                 <i class="fa fa-trash text-danger"></i>
                                                                             </a>
                                                                         </td>
-                                                                        <td>{{ ++$key }}</td>
+                                                                        <td>{{ $key }}</td>
                                                                         @foreach($tableColumns as $column)
                                                                             @if(isset($selectedColumns[$column['name']]))
                                                                                 <td>{{ $data[$selectedColumns[$column['name']]] ?? '' }}</td>
@@ -1128,23 +1128,14 @@
                     </div>
                 @endif
                 @if(request()->step == 4)
-                    <div @class(['active' => request()->step == 4,'tab-pane']) role="tabpanel" id="summarydata">
+                    <div @class(['active' => request()->step == 4, 'tab-pane']) role="tabpanel" id="summarydata">
                         <div class="form-group">
                             <div class="col-md-12">
                                 <div id="sample_3_wrapper">
-                                    @if($result && !$result['error'])
-                                        <div class="note note-success">
-                                            <p><b> Total {{ $result['count'] }} data has been imported! </b> &nbsp;<i
-                                                    class="fa fa-check-circle greeg-color"></i></p>
-                                        </div>
-                                    @endif
-                                    @if($result && $result['error'])
-                                        <div class="note note-danger">
-                                            <div class="d-flex align-items-center">
-                                                <p class="text-danger"><b>{{ $result['error'] }}</b></p>
-                                            </div>
-                                        </div>
-                                    @endif
+                                    <div class="note note-success">
+                                        <p><b> Import CSV file data has been imported!  </b> &nbsp;<i
+                                                class="fa fa-check-circle greeg-color"></i></p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
