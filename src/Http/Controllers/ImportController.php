@@ -5,6 +5,8 @@ namespace Vcian\LaravelDataBringin\Http\Controllers;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use Vcian\LaravelDataBringin\Constants\Constant;
 use Vcian\LaravelDataBringin\Http\Requests\ImportRequest;
 use Vcian\LaravelDataBringin\Http\Requests\StoreImportRequest;
 use Vcian\LaravelDataBringin\Models\ImportLog;
@@ -35,8 +37,8 @@ class ImportController extends Controller
         $data['tableColumns'] = $table ? $this->importService->getTableColumns($table) : collect();
         $data['selectedTable'] = $table;
         $data['selectedColumns'] = $log->extra_data['columns'] ?? collect();
-        $data['fileColumns'] = $log ? $this->importService->getCsvColumns(storage_path("app/import/import.csv")) : collect();
-        $data['fileData'] = $log ? $this->importService->csvToArray(storage_path("app/import/import.csv")) : collect();
+        $data['fileColumns'] = $log ? $this->importService->getCsvColumns(storage_path("app/{$log->file_path}")) : collect();
+        $data['fileData'] = $log ? $this->importService->getFileData($request->all(), $log) : collect();
 
         return view('data-bringin::import', $data);
     }
@@ -52,10 +54,11 @@ class ImportController extends Controller
             case 1:
                 session()->forget('import');
                 $file = $request->file('file');
-                $path = Storage::disk('local')->putFileAs('import', $file, 'import.csv');
+                $path = Storage::disk('local')->putFileAs('import', $file, "import.csv");
                 $log = ImportLog::create([
-                    'total_count' => count($this->importService->csvToArray(storage_path("app/$path"))),
-                    'file_name'  => $file->getClientOriginalName(),
+                    'total_count' => count($this->importService->csvToArray(storage_path("app/{$path}"))),
+                    'file_name' => $file->getClientOriginalName(),
+                    'file_path' => $path,
                 ]);
                 session(['import.step' => 2, 'import.id' => $log->id]);
                 break;
@@ -77,17 +80,37 @@ class ImportController extends Controller
         return to_route('data_bringin.index', ['step' => ++$request->step]);
     }
 
-    public function deleteRecord(int $id): RedirectResponse
+    /**
+     * @param int $index
+     * @return RedirectResponse
+     */
+    public function delete(int $index): RedirectResponse
     {
         try {
-            $data = collect(session('import.data'))->reject(function (array $data) use ($id) {
-                return $data['Id'] == $id;
-            })->values();
-            session(['import.data' => $data]);
-
+            $this->importService->delete($index);
             return redirect()->back()->withSuccess('Record Deleted Successfully.');
         } catch (\Exception $exception) {
             return redirect()->back()->withError($exception->getMessage());
         }
+    }
+
+    /**
+     * @return View
+     */
+    public function logs(): View
+    {
+        return view('data-bringin::logs', [
+            'logs' => ImportLog::latest()->paginate($request['perPage'] ?? Constant::PER_PAGE)
+        ]);
+    }
+
+    /**
+     * @param int $id
+     * @return StreamedResponse
+     */
+    public function downloadFailedRecords(int $id): StreamedResponse
+    {
+        $log = ImportLog::findOrFail($id);
+        return Storage::disk('local')->download($log->failed_file_path);
     }
 }

@@ -17,6 +17,7 @@ return new class extends Migration
             $table->integer('success_count')->default(0);
             $table->integer('failed_count')->default(0);
             $table->string('file_name');
+            $table->string('file_path');
             $table->string('failed_file_path')->nullable();
             $table->string('batch_id')->nullable();
             $table->json('extra_data')->nullable();

@@ -7,5 +7,7 @@ namespace Vcian\LaravelDataBringin\Constants;
  */
 class Constant
 {
-    public const PER_PAGE = 10;
+    public const IMPORT_PER_PAGE = 1000;
+
+    public const PER_PAGE = 100;
 }

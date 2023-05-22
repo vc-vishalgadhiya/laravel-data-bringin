@@ -2,6 +2,8 @@
 
 namespace Vcian\LaravelDataBringin\Services;
 
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
@@ -77,7 +79,25 @@ class ImportService
     public function getCsvColumns(string $filePath): bool|array
     {
         $file = fopen($filePath, 'r');
-        return fgetcsv($file, '1024', ',');
+        $columns = fgetcsv($file, '1024', ',');
+        fclose($file);
+        return $columns;
+    }
+
+    /**
+     * @param array $request
+     * @param ImportLog $log
+     * @return LengthAwarePaginator
+     */
+    public function getFileData(array $request, ImportLog $log): LengthAwarePaginator
+    {
+        $perPage = $request['perPage'] ?? Constant::PER_PAGE;
+        $currentPage = Paginator::resolveCurrentPage();
+        $data = $this->csvToArray(storage_path("app/{$log->file_path}"));
+        $items = collect($data)->slice(($currentPage - 1) * $perPage, $perPage)->all();
+        return new LengthAwarePaginator($items, count($data), $perPage, $currentPage, [
+            'path' => Paginator::resolveCurrentPath(),
+        ]);
     }
 
     /**
@@ -87,7 +107,7 @@ class ImportService
     public function saveData(): void
     {
         $log = ImportLog::findOrFail(session('import.id'));
-        $pages = ceil($log->total_count / Constant::PER_PAGE);
+        $pages = ceil($log->total_count / Constant::IMPORT_PER_PAGE);
         $jobs = collect()->range(1, $pages)->map(fn($page) => new ImportData($page, $log));
         $batch = Bus::batch($jobs)
             ->name('Import Data')
@@ -95,6 +115,29 @@ class ImportService
             ->dispatch();
         $log->batch_id = $batch->id;
         $log->save();
+    }
+
+    /**
+     * @param int $index
+     * @return void
+     */
+    public function delete(int $index): void
+    {
+        $log = ImportLog::findOrFail(session('import.id'));
+
+        // Read the file into an array
+        $filePath = storage_path("app/{$log->file_path}");
+        $lines = file($filePath, FILE_IGNORE_NEW_LINES);
+
+        // Check if the row index is valid
+        if (isset($lines[$index])) {
+            // Remove the row from the array
+            unset($lines[$index]);
+
+            // Write the updated array back to the file
+            file_put_contents($filePath, implode(PHP_EOL, $lines));
+            $log->decrement('total_count');
+        }
     }
 
 }
